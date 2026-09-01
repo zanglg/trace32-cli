@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a CLI primitive, Skill, or integration improvement
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What agent/debugging problem should this solve?
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Layer
+      options:
+        - CLI primitive
+        - Agent Skill
+        - Documentation
+        - Packaging / installation
+        - CI / release
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true

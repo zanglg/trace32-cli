@@ -1,0 +1,35 @@
+name: Release validation
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate SemVer tag and package version
+        shell: python
+        run: |
+          import os, re, tomllib
+          tag = os.environ["GITHUB_REF_NAME"]
+          pattern = r"^v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+          if not re.fullmatch(pattern, tag):
+              raise SystemExit(f"invalid SemVer release tag: {tag}")
+          with open("pyproject.toml", "rb") as fh:
+              version = tomllib.load(fh)["project"]["version"]
+          if tag != f"v{version}":
+              raise SystemExit(f"tag {tag} does not match package version {version}")
+      - run: python -m pip install build
+      - run: python -m build
+
+# Publishing is intentionally not enabled during the 0.0.0 initialization phase.
+# Add PyPI Trusted Publishing only after the release process is approved.

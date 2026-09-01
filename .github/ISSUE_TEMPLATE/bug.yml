@@ -1,0 +1,37 @@
+name: Bug report
+description: Report reproducible trace32-cli behavior
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include credentials, proprietary target data, or confidential CMM scripts."
+  - type: input
+    id: version
+    attributes:
+      label: trace32-cli version
+      placeholder: "t32 0.0.0"
+    validations:
+      required: true
+  - type: input
+    id: pyrcl
+    attributes:
+      label: PYRCL version
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and sanitized output
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, TRACE32 version, architecture if relevant; omit confidential details.
