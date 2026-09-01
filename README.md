@@ -2,15 +2,17 @@
 
 A structured, agent-friendly CLI for Lauterbach TRACE32 via PYRCL, with a bundled `t32` Agent Skill for AI-assisted embedded debugging.
 
-> **Status:** `0.0.0` — initial development baseline. The public interface is intentionally unstable until `1.0.0`.
+> **Status:** `0.1.0` — first public alpha release. The public interface may evolve during `0.x`; compatibility policy is defined for `1.0.0`.
 
 ## Installation and setup
 
 ### 1. Install the CLI
 
 ```bash
-uv tool install git+https://github.com/zanglg/trace32-cli@dev
+uv tool install git+https://github.com/zanglg/trace32-cli@v0.1.0
 ```
+
+For development builds, install from `dev` explicitly.
 
 ### 2. Verify the CLI
 
@@ -258,7 +260,7 @@ Authoritative design and completion boundaries are documented in:
 - [Architecture](docs/design/ARCHITECTURE.md)
 - [Layer 0 / Layer 1 implementation status](docs/design/STATUS.md)
 
-Software CI validates Python 3.9–3.13, lint, unit tests, CLI smoke tests, and package build. Runtime-dependent TRACE32 semantics still require representative live PowerView/target integration testing; see the status document for the exact boundary.
+Software CI validates Python 3.9–3.13, lint, unit tests, CLI smoke tests, and package build. The `0.1.0` candidate also passed every registered `t32 test --all` case against a real TRACE32 PowerView session and physical target; broader cross-target/runtime validation remains ongoing.
 
 ## Documentation
 

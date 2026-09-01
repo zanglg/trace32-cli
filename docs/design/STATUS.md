@@ -8,7 +8,8 @@ This document records the current completion boundary of the generic debugger co
 Layer 0 normalized TRACE32 capability adapter   implemented for current generic core
 Layer 1 generic debugger semantics              implemented for current generic core
 Software CI / parser / packaging validation     complete
-Real PowerView + target integration validation  incomplete
+Representative PowerView + physical target      passed registered self-test suites
+Cross-target / cross-runtime validation matrix   incomplete
 Architecture-specific semantic extensions       intentionally deferred
 Layer 2 workflow library                        not part of Layer 0/1 completion
 ```
@@ -37,10 +38,12 @@ Layer 2 workflow library                        not part of Layer 0/1 completion
 
 ### Runtime-dependent validation still required
 
-Software tests verify adapter contracts with fake backends and installed PyRCL compatibility. The following still require live TRACE32/PowerView validation across representative environments:
+Software tests verify adapter contracts with fake backends and installed PyRCL compatibility. A representative live PowerView + physical-target run has passed every currently registered `t32 test --all` case, including Layer 1 → Layer 0 raw/typed VM memory, endianness, breakpoint lifecycle, and Break/Step/Go execution-control checks.
+
+The following still require broader live TRACE32/PowerView validation across representative environments:
 
 - exact behavior of typed memory accesses for target-specific access classes
-- breakpoint implementation/action combinations on real targets
+- breakpoint implementation/action combinations on different real targets
 - PRACTICE timeout/non-blocking behavior in actual scripts
 - direct-access availability and behavior across PowerView/PyRCL versions
 - exact backend error mappings for live target/connection failure modes
@@ -72,7 +75,7 @@ Layer 0 must not gain debugger semantics such as stop-reason inference, frame me
 
 ### Runtime-dependent validation still required
 
-These operations depend on TRACE32 command/function behavior, loaded debug information, target state, or OS awareness and therefore need live integration coverage:
+The registered live self-test suite covers a useful generic core subset, but it is not equivalent to every public Layer 1 command. These operations still depend on TRACE32 command/function behavior, loaded debug information, target state, or OS awareness and need broader live integration coverage:
 
 - `Step.Asm`, `Step.Hll`, `Step.Over`, `Step.Return` semantics on representative targets
 - stop-reason inference against real breakpoint/watchpoint/exception stops
@@ -110,7 +113,7 @@ Architecture-specific register names remain opaque parameters until one of these
 
 ## Validation status
 
-The feature branch currently requires and passes software-side checks through GitHub Actions:
+The `0.1.0` release candidate requires and passes software-side checks through GitHub Actions:
 
 ```text
 Python 3.9–3.13
@@ -120,8 +123,14 @@ CLI smoke tests
 python -m build
 ```
 
-This validates the software contract, parser surface, package compatibility, and fake-backend semantics. It does not substitute for live target integration testing.
+Representative live validation also passed every currently registered case in:
+
+```bash
+t32 test --all
+```
+
+against a real TRACE32 PowerView session and physical target. This validates the registered self-test surface; it does not claim exhaustive compatibility across all TRACE32 versions, processor families, OS-awareness configurations, source/debug-info combinations, or optional backend services.
 
 ## Next completion gate
 
-The next meaningful Layer 0/1 work is not broad API expansion. It is a real-target integration matrix that exercises representative PowerView/target/OS-awareness combinations and converts confirmed runtime differences into tests or narrow adapter fixes.
+The next meaningful Layer 0/1 work is not broad API expansion. It is a broader real-target integration matrix that exercises representative PowerView/target/OS-awareness combinations and converts confirmed runtime differences into tests or narrow adapter fixes.

@@ -19,6 +19,7 @@ The root [README](../README.md) remains the primary installation and quick-start
 ## Maintainer guides
 
 - [GitHub repository settings](maintainers/REPOSITORY_SETTINGS.md) — GitHub UI settings that cannot be represented directly by repository files, split into initial setup and ongoing controls.
+- [Release procedure](maintainers/RELEASING.md) — branch promotion, release preparation, immutable tag trigger, artifact validation, and GitHub Release automation.
 
 Repository-level policies remain at the root where GitHub and contributors expect them:
 
@@ -36,7 +37,7 @@ Use these boundaries when updating documentation:
 README.md                 installation + quick start + public overview
 docs/design/*             current architecture and implementation status
 docs/user/*               detailed end-user procedures
-docs/maintainers/*        repository/service administration
+docs/maintainers/*        repository/service/release administration
 CONTRIBUTING.md            contributor workflow
 VERSIONING.md              version/tag/release policy
 CHANGELOG.md               release-to-release user-visible changes

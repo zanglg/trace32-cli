@@ -6,6 +6,8 @@ The project follows Semantic Versioning. This changelog records release-to-relea
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-01
+
 ### Added
 
 - Structured `t32` CLI for Lauterbach TRACE32 automation over PYRCL, with layered target, execution, context, address, register, memory, symbol, variable/expression/type, breakpoint/watchpoint, source/location, instruction/disassembly, stack/frame, program/image, PRACTICE, and raw command/function capabilities.
@@ -24,4 +26,4 @@ The project follows Semantic Versioning. This changelog records release-to-relea
 - Read-only `doctor` diagnostics for CLI, PYRCL, resolved configuration, and PowerView Remote API connectivity.
 - Bundled `t32` Agent Skill with install/status/show/uninstall commands and guidance for configuration, discovery, safety, backend capabilities, stop-reason confidence, layered debugger use, and Agent-assisted embedded debugging.
 - Live regression plans with observation-only `t32 test`, Layer 1 → Layer 0 TRACE32 host-side `VM:` memory round-trips via `--memory` using an automatically initialized dedicated 256-byte scratch range, temporary debugger/breakpoint-state coverage via `--extended`, execution-control coverage via `--execution`, and future-facing full-suite selection via `--all`.
-- Repository CI across supported Python versions, packaging checks, contribution/security/versioning guidance, and Agent development instructions.
+- Repository CI across supported Python versions, packaging checks, contribution/security/versioning guidance, Agent development instructions, and tag-triggered GitHub Release automation with built-wheel smoke validation.

@@ -81,6 +81,28 @@ Use CLI options or `--config FILE` for temporary/machine-specific overrides. Do 
 
 Bare `t32` must remain read-only and should display the resolved project root/profile/endpoint/config files so configuration discovery is visible without connecting to PowerView.
 
+## Branch and release contract
+
+Long-lived branches are exactly:
+
+```text
+main    released or release-ready history
+dev     next-version integration
+```
+
+Development rules:
+
+- Use short-lived feature branches for non-trivial changes.
+- Feature branches target `dev` and are integrated with squash merge after review/CI.
+- Delete a feature branch after it is integrated.
+- Promote release-ready `dev` to `main` by fast-forward only. Do not squash `dev` into a release-only commit and do not create merge commits between `dev` and `main`.
+- Release tags use `vMAJOR.MINOR.PATCH`, must point to a commit contained in `main`, and are immutable once published.
+- Creating/pushing a release tag is the explicit release trigger. Do not create a release tag until release preparation and required validation are complete.
+- The GitHub Actions release workflow owns deterministic artifact build/smoke/release creation. Agents must not bypass it by manually uploading alternate artifacts.
+- PyPI is not part of the `0.1.0` release path. Do not add credentials or ad-hoc publishing steps unless PyPI publishing is adopted by a separate repository decision.
+
+The operational release runbook is `docs/maintainers/RELEASING.md`. Semantic version/tag policy remains authoritative in `VERSIONING.md`.
+
 ## Documentation structure
 
 Use `docs/README.md` as the documentation map.
@@ -90,7 +112,7 @@ README.md                    install + quick start + public overview
 docs/design/ARCHITECTURE.md current architecture
 docs/design/STATUS.md       implementation/validation boundary
 docs/user/                  detailed end-user procedures
-docs/maintainers/           repository/service administration
+docs/maintainers/           repository/service/release administration
 CONTRIBUTING.md             contributor workflow
 VERSIONING.md               version/tag/release policy
 CHANGELOG.md                release-to-release user-visible changes
@@ -115,11 +137,11 @@ Documentation rules:
 
 `CHANGELOG.md` records release-to-release user-visible net changes. Do not narrate implementation experiments or reversals that happened entirely within the same unreleased version. Development history belongs in commits, issues, and pull requests.
 
-For the first public release, the Unreleased section should read like a coherent release-note draft for the final shipped contract rather than a timeline of bootstrap iterations.
+For each release, move the shipped net changes into a dated version section and leave a fresh `Unreleased` section for the next cycle.
 
 ## Versioning
 
-The current initialization version is `0.0.0`. Version/tag/release rules are defined only in `VERSIONING.md`.
+The current first public release line is `0.1.x`. Version/tag/release rules are defined only in `VERSIONING.md`.
 
 ## Bundled end-user Skill
 

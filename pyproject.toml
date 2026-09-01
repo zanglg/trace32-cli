@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trace32-cli"
-version = "0.0.0"
+version = "0.1.0"
 description = "A structured CLI for Lauterbach TRACE32 via PYRCL, with Agent Skills for AI-assisted embedded debugging."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -25,7 +25,7 @@ keywords = [
   "jtag"
 ]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",

@@ -17,7 +17,7 @@ def _isolated_config(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_version_and_parser_baseline():
-    assert __version__ == "0.0.0"
+    assert __version__ == "0.1.0"
     assert build_parser().prog == "t32"
 
 
@@ -32,7 +32,7 @@ def test_no_args_prints_setup_oriented_quick_start(capsys):
 
 def test_local_discovery_commands(capsys):
     assert main(["--json", "about"]) == 0
-    assert json.loads(capsys.readouterr().out)["data"]["version"] == "0.0.0"
+    assert json.loads(capsys.readouterr().out)["data"]["version"] == "0.1.0"
 
     assert main(["--json", "capabilities"]) == 0
     capabilities = json.loads(capsys.readouterr().out)["data"]
