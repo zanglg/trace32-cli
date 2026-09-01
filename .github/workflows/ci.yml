@@ -43,6 +43,13 @@ jobs:
           t32 skill --help
           t32 reg read --help
           t32 mem read --help
+          t32 exec --help
+          t32 source --help
+          t32 stack --help
+          t32 backend --help
+          t32 context --help
+          t32 frame --help
+          t32 practice run --help
 
   build:
     name: package-build

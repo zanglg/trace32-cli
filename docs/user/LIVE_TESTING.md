@@ -43,7 +43,7 @@ It does not request attach, target memory/register/variable writes, breakpoint c
 
 ## Memory: `--memory`
 
-Adds write/read/restore round-trips in TRACE32 `VM:` virtual memory:
+Adds memory round-trips in a dedicated TRACE32 `VM:` host-side scratch range:
 
 - raw bytes
 - `u8`, `u16`, `u32`, `u64`, `s64`
@@ -51,17 +51,29 @@ Adds write/read/restore round-trips in TRACE32 `VM:` virtual memory:
 - multi-element `u32`
 - explicit little/big endian checks
 
-Each case saves the original VM bytes and restores them in `finally` cleanup.
+Before any preserve/read operation, the suite initializes the complete 256-byte scratch range to zero through the same Layer 1 → Layer 0 memory path used by the public structured CLI. This is required because TRACE32 `VM:` locations may initially be uninitialized. The initialization itself is reported as the `vm.initialize` case.
+
+After initialization, each individual round-trip preserves and restores the bytes that existed at the start of that case. The suite does **not** attempt to restore the scratch range to its pre-test initialized/uninitialized state: the selected 256-byte `VM:` range is owned by the self-test for the duration and aftermath of the run.
+
+If `vm.initialize` fails, dependent `vm.*` round-trip cases are skipped rather than producing repeated failures for the same root cause.
 
 ### What `VM:` means
 
-`VM:` is the TRACE32 virtual-memory access class: debugger-side memory managed by TRACE32. It is not target `D:` data memory, target `P:` program memory, or the debugged CPU's MMU virtual address space. This makes it useful for testing PYRCL memory primitives without deliberately writing target RAM/code.
+`VM:` is the TRACE32 virtual-memory access class: debugger-side memory managed by TRACE32 on the host side. It is not target `D:` data memory, target `P:` program memory, or the debugged CPU's MMU virtual address space. This makes it suitable for exercising the Layer 0/1 memory implementation without deliberately writing target RAM or code.
 
-The default scratch base is `VM:0x1000`; override it with:
+The default owned scratch range is:
+
+```text
+VM:0x1000 .. VM:0x10ff
+```
+
+Override its base with:
 
 ```bash
 t32 test --memory --vm-address VM:0x4000
 ```
+
+which reserves `VM:0x4000 .. VM:0x40ff` for that self-test run.
 
 ## Extended: `--extended`
 
@@ -83,7 +95,7 @@ Adds:
 Break → Step → Go → restore initial running/halted mode when possible
 ```
 
-This plan **executes target instructions**. Restoring the final running/halted mode does not undo instructions already executed by Step/Go, or their register, memory, peripheral, timing, or external side effects. Use only on a target where such execution is acceptable.
+This plan executes target instructions. Restoring the final running/halted mode does not undo instructions already executed by Step/Go, or their register, memory, peripheral, timing, or external side effects. Use only on a target where such execution is acceptable.
 
 ## All: `--all`
 

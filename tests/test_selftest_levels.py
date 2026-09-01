@@ -29,6 +29,45 @@ def test_test_plans_are_cumulative_and_all_tracks_registered_suites():
     assert selftest.get_plan("all").suites == frozenset(selftest.OPTIONAL_SUITES)
 
 
+def test_vm_scratch_initializes_before_any_read():
+    calls = []
+    storage = bytearray(b"?" * selftest.VM_SCRATCH_SIZE)
+
+    class Debugger:
+        def memory_write_bytes(self, address, data):
+            calls.append(("write", address, len(data)))
+            storage[:] = data
+
+        def memory_dump(self, address, *, length):
+            calls.append(("read", address, length))
+            return SimpleNamespace(), bytes(storage[:length])
+
+    result = selftest._initialize_vm_scratch(Debugger(), "VM:0x1000")
+
+    assert calls[0] == ("write", "VM:0x1000", selftest.VM_SCRATCH_SIZE)
+    assert calls[1] == ("read", "VM:0x1000", selftest.VM_SCRATCH_SIZE)
+    assert result == {
+        "address": "VM:0x1000",
+        "length": selftest.VM_SCRATCH_SIZE,
+        "initialized": True,
+    }
+    assert storage == bytes(selftest.VM_SCRATCH_SIZE)
+
+
+def test_vm_initialization_failure_skips_dependent_roundtrips():
+    class Debugger:
+        def memory_write_bytes(self, _address, _data):
+            raise RuntimeError("VM unavailable")
+
+    cases = []
+    selftest._run_memory_tests(Debugger(), cases, "VM:0x1000")
+
+    assert cases[0]["id"] == "vm.initialize"
+    assert cases[0]["status"] == "fail"
+    assert len(cases) == 12
+    assert all(case["status"] == "skip" for case in cases[1:])
+
+
 def test_breakpoint_lifecycle_uses_object_methods_and_cleans_up():
     class Address:
         access = "P"

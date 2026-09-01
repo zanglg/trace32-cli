@@ -340,9 +340,8 @@ def test_layered_profile_config_and_cli_override(tmp_path: Path, monkeypatch):
     )
     project = tmp_path / ".trace32"
     project.mkdir()
-    (project / "config.toml").write_text('[profiles.app]\nport = 21001\n', encoding="utf-8")
-    (project / "config.local.toml").write_text(
-        '[profiles.app]\nhost = "127.0.0.1"\n',
+    (project / "config.toml").write_text(
+        '[profiles.app]\nhost = "127.0.0.1"\nport = 21001\n',
         encoding="utf-8",
     )
 
@@ -351,7 +350,8 @@ def test_layered_profile_config_and_cli_override(tmp_path: Path, monkeypatch):
     assert runtime_config["host"] == "127.0.0.1"
     assert runtime_config["port"] == 21001
     assert runtime_config["timeout"] == 20
-    assert meta["sources"]["host"].endswith(".trace32/config.local.toml")
+    assert meta["sources"]["host"].endswith(".trace32/config.toml")
+    assert [item["layer"] for item in meta["files"]] == ["user", "project"]
 
     args = build_parser().parse_args(
         ["--host", "10.0.0.3", "--port", "20003", "profile", "current"]
@@ -372,7 +372,6 @@ def test_profile_commands_and_skill_install(tmp_path: Path, monkeypatch, capsys)
     )
     assert main(["--json", "profile", "list"]) == 0
     assert [item["name"] for item in json.loads(capsys.readouterr().out)["data"]] == ["app", "safety"]
-
     root = tmp_path / "skills"
     assert main(["--json", "skill", "install", "--dir", str(root)]) == 0
     capsys.readouterr()

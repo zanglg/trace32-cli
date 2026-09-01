@@ -14,12 +14,15 @@ from typing import Any, Callable
 
 from . import cli as core
 from . import runtime
+from .layer0 import PyrclBackend
+from .layer1 import Debugger as Layer1Debugger
 
 SUITE_MEMORY = "memory"
 SUITE_EXTENDED = "extended"
 SUITE_EXECUTION = "execution"
 OPTIONAL_SUITES = (SUITE_MEMORY, SUITE_EXTENDED, SUITE_EXECUTION)
 DEFAULT_VM_ADDRESS = "VM:0x1000"
+VM_SCRATCH_SIZE = 0x100
 _TYPE_WIDTH = {"u8": 1, "u16": 2, "u32": 4, "u64": 8, "s64": 8, "f32": 4, "f64": 8}
 
 
@@ -48,7 +51,7 @@ TEST_PLANS: dict[str, TestPlan] = {
     "memory": TestPlan(
         "memory",
         _prefix_suites(1),
-        "read-only baseline plus restored TRACE32 VM: memory round-trips",
+        "read-only baseline plus initialized TRACE32 host-side VM: scratch round-trips",
     ),
     "extended": TestPlan(
         "extended",
@@ -98,7 +101,10 @@ def capability_metadata() -> dict[str, Any]:
         "address_override": "t32 test --address P:0x...",
         "safety": {
             "read-only": "observation only",
-            "memory": "adds restored TRACE32 VM: scratch writes; no direct target-memory writes",
+            "memory": (
+                "initializes and writes a dedicated 256-byte TRACE32 host-side VM: scratch range; "
+                "no direct target-memory writes"
+            ),
             "extended": (
                 "adds temporary breakpoint state; TRACE32 chooses the breakpoint implementation, "
                 "so software/on-chip target effects are runtime-dependent"
@@ -124,7 +130,10 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--vm-address",
         default=DEFAULT_VM_ADDRESS,
-        help=f"TRACE32 VM: scratch base for memory-capable plans; default: {DEFAULT_VM_ADDRESS}",
+        help=(
+            f"base of the dedicated {VM_SCRATCH_SIZE}-byte TRACE32 host-side VM: scratch range; "
+            f"default: {DEFAULT_VM_ADDRESS}"
+        ),
     )
 
     plans = parser.add_mutually_exclusive_group()
@@ -133,7 +142,7 @@ def configure_parser(parser: argparse.ArgumentParser) -> None:
         dest="test_plan",
         action="store_const",
         const="memory",
-        help="add restored TRACE32 VM: memory round-trip tests",
+        help="initialize host-side VM: scratch and run memory round-trip tests",
     )
     plans.add_argument(
         "--extended",
@@ -208,8 +217,8 @@ def _target_address(explicit: str | None, pc: int | None) -> str | None:
     return f"P:0x{pc:x}"
 
 
-def _vm_address(dbg, text: str, offset: int = 0) -> str:
-    address = core._address(dbg, text if ":" in text else f"VM:{text}")
+def _vm_address(debugger: Layer1Debugger, text: str, offset: int = 0) -> str:
+    address = debugger.address_parse(text if ":" in text else f"VM:{text}")
     access = str(getattr(address, "access", "") or "").upper()
     if access != "VM":
         raise core.CliError(
@@ -227,62 +236,66 @@ def _vm_address(dbg, text: str, offset: int = 0) -> str:
     return f"VM:0x{value + offset:x}"
 
 
-def _preserve_bytes(dbg, address_text: str, length: int) -> bytes:
-    return bytes(dbg.memory.read(core._address(dbg, address_text), length=length))
+def _initialize_vm_scratch(debugger: Layer1Debugger, vm_base: str) -> dict[str, Any]:
+    """Initialize the host-side scratch before any preserve/read operation.
+
+    TRACE32 VM: can contain uninitialized locations. The self-test owns this
+    dedicated range, so it initializes the complete range before performing
+    read/preserve/write/restore round-trips. This never writes target memory.
+    """
+
+    data = bytes(VM_SCRATCH_SIZE)
+    debugger.memory_write_bytes(vm_base, data)
+    _, observed = debugger.memory_dump(vm_base, length=VM_SCRATCH_SIZE)
+    if observed != data:
+        raise AssertionError("VM scratch initialization verification failed")
+    return {"address": vm_base, "length": VM_SCRATCH_SIZE, "initialized": True}
 
 
-def _restore_bytes(dbg, address_text: str, data: bytes) -> None:
-    dbg.memory.write(core._address(dbg, address_text), data)
+def _preserve_bytes(debugger: Layer1Debugger, address_text: str, length: int) -> bytes:
+    _, data = debugger.memory_dump(address_text, length=length)
+    return data
 
 
-def _raw_vm_roundtrip(dbg, address_text: str) -> dict[str, Any]:
+def _restore_bytes(debugger: Layer1Debugger, address_text: str, data: bytes) -> None:
+    debugger.memory_write_bytes(address_text, data)
+
+
+def _raw_vm_roundtrip(debugger: Layer1Debugger, address_text: str) -> dict[str, Any]:
     pattern = bytes.fromhex("00112233445566778899aabbccddeeff")
-    original = _preserve_bytes(dbg, address_text, len(pattern))
+    original = _preserve_bytes(debugger, address_text, len(pattern))
     try:
-        core.h_mem_write_bytes(
-            dbg, SimpleNamespace(address=address_text, access=None, hexdata=pattern.hex())
-        )
-        result = core.h_mem_dump(
-            dbg, SimpleNamespace(address=address_text, access=None, length=len(pattern))
-        )
-        if result["hex"] != pattern.hex():
-            raise AssertionError(f"round-trip mismatch: {result['hex']} != {pattern.hex()}")
-        return {"address": address_text, "length": len(pattern), "hex": result["hex"]}
+        debugger.memory_write_bytes(address_text, pattern)
+        _, observed = debugger.memory_dump(address_text, length=len(pattern))
+        if observed != pattern:
+            raise AssertionError(f"round-trip mismatch: {observed.hex()} != {pattern.hex()}")
+        return {"address": address_text, "length": len(pattern), "hex": observed.hex()}
     finally:
-        _restore_bytes(dbg, address_text, original)
+        _restore_bytes(debugger, address_text, original)
 
 
 def _typed_vm_roundtrip(
-    dbg,
+    debugger: Layer1Debugger,
     address_text: str,
     type_name: str,
     values: list[Any],
     *,
     byteorder: str | None = None,
 ) -> dict[str, Any]:
-    original = _preserve_bytes(dbg, address_text, _TYPE_WIDTH[type_name] * len(values))
+    original = _preserve_bytes(debugger, address_text, _TYPE_WIDTH[type_name] * len(values))
     try:
-        core.h_mem_write(
-            dbg,
-            SimpleNamespace(
-                address=address_text,
-                access=None,
-                type=type_name,
-                values=[str(value) for value in values],
-                byteorder=byteorder,
-            ),
+        debugger.memory_write_typed(
+            address_text,
+            values,
+            type_name=type_name,
+            byteorder=byteorder,
         )
-        result = core.h_mem_read(
-            dbg,
-            SimpleNamespace(
-                address=address_text,
-                access=None,
-                type=type_name,
-                count=len(values),
-                byteorder=byteorder,
-            ),
+        _, actual = debugger.memory_read_typed(
+            address_text,
+            type_name=type_name,
+            count=len(values),
+            byteorder=byteorder,
         )
-        actual = result["value"] if isinstance(result["value"], list) else [result["value"]]
         if type_name in {"f32", "f64"}:
             for expected, observed in zip(values, actual):
                 if not math.isclose(float(expected), float(observed), rel_tol=1e-6, abs_tol=1e-6):
@@ -297,48 +310,58 @@ def _typed_vm_roundtrip(
             "byteorder": byteorder,
         }
     finally:
-        _restore_bytes(dbg, address_text, original)
+        _restore_bytes(debugger, address_text, original)
 
 
-def _byteorder_vm_roundtrip(dbg, address_text: str, byteorder: str, expected_hex: str):
-    original = _preserve_bytes(dbg, address_text, 4)
+def _byteorder_vm_roundtrip(
+    debugger: Layer1Debugger,
+    address_text: str,
+    byteorder: str,
+    expected_hex: str,
+) -> dict[str, Any]:
+    original = _preserve_bytes(debugger, address_text, 4)
     try:
-        core.h_mem_write(
-            dbg,
-            SimpleNamespace(
-                address=address_text,
-                access=None,
-                type="u32",
-                values=["0x11223344"],
-                byteorder=byteorder,
-            ),
+        debugger.memory_write_typed(
+            address_text,
+            [0x11223344],
+            type_name="u32",
+            byteorder=byteorder,
         )
-        result = core.h_mem_dump(
-            dbg, SimpleNamespace(address=address_text, access=None, length=4)
-        )
-        if result["hex"] != expected_hex:
-            raise AssertionError(f"byteorder mismatch: {result['hex']} != {expected_hex}")
-        return {"address": address_text, "byteorder": byteorder, "hex": result["hex"]}
+        _, observed = debugger.memory_dump(address_text, length=4)
+        if observed.hex() != expected_hex:
+            raise AssertionError(f"byteorder mismatch: {observed.hex()} != {expected_hex}")
+        return {"address": address_text, "byteorder": byteorder, "hex": observed.hex()}
     finally:
-        _restore_bytes(dbg, address_text, original)
+        _restore_bytes(debugger, address_text, original)
 
 
-def _run_memory_tests(dbg, cases: list[dict[str, Any]], vm_base: str) -> None:
+def _run_memory_tests(
+    debugger: Layer1Debugger,
+    cases: list[dict[str, Any]],
+    vm_base: str,
+) -> None:
     specs = [
-        ("vm.raw", 0x00, lambda a: _raw_vm_roundtrip(dbg, a)),
-        ("vm.u8", 0x20, lambda a: _typed_vm_roundtrip(dbg, a, "u8", [1, 2, 255])),
-        ("vm.u16", 0x30, lambda a: _typed_vm_roundtrip(dbg, a, "u16", [0x1122, 0x3344])),
-        ("vm.u32", 0x40, lambda a: _typed_vm_roundtrip(dbg, a, "u32", [0x11223344, 0x55667788])),
-        ("vm.u64", 0x50, lambda a: _typed_vm_roundtrip(dbg, a, "u64", [0x1122334455667788])),
-        ("vm.s64", 0x60, lambda a: _typed_vm_roundtrip(dbg, a, "s64", [-123456789])),
-        ("vm.f32", 0x70, lambda a: _typed_vm_roundtrip(dbg, a, "f32", [1.5])),
-        ("vm.f64", 0x80, lambda a: _typed_vm_roundtrip(dbg, a, "f64", [3.141592653589793])),
-        ("vm.multi_u32", 0x90, lambda a: _typed_vm_roundtrip(dbg, a, "u32", [1, 2, 3, 4])),
-        ("vm.little_endian", 0xB0, lambda a: _byteorder_vm_roundtrip(dbg, a, "little", "44332211")),
-        ("vm.big_endian", 0xC0, lambda a: _byteorder_vm_roundtrip(dbg, a, "big", "11223344")),
+        ("vm.raw", 0x00, lambda a: _raw_vm_roundtrip(debugger, a)),
+        ("vm.u8", 0x20, lambda a: _typed_vm_roundtrip(debugger, a, "u8", [1, 2, 255])),
+        ("vm.u16", 0x30, lambda a: _typed_vm_roundtrip(debugger, a, "u16", [0x1122, 0x3344])),
+        ("vm.u32", 0x40, lambda a: _typed_vm_roundtrip(debugger, a, "u32", [0x11223344, 0x55667788])),
+        ("vm.u64", 0x50, lambda a: _typed_vm_roundtrip(debugger, a, "u64", [0x1122334455667788])),
+        ("vm.s64", 0x60, lambda a: _typed_vm_roundtrip(debugger, a, "s64", [-123456789])),
+        ("vm.f32", 0x70, lambda a: _typed_vm_roundtrip(debugger, a, "f32", [1.5])),
+        ("vm.f64", 0x80, lambda a: _typed_vm_roundtrip(debugger, a, "f64", [3.141592653589793])),
+        ("vm.multi_u32", 0x90, lambda a: _typed_vm_roundtrip(debugger, a, "u32", [1, 2, 3, 4])),
+        ("vm.little_endian", 0xB0, lambda a: _byteorder_vm_roundtrip(debugger, a, "little", "44332211")),
+        ("vm.big_endian", 0xC0, lambda a: _byteorder_vm_roundtrip(debugger, a, "big", "11223344")),
     ]
+
+    initialized = _record(cases, "vm.initialize", lambda: _initialize_vm_scratch(debugger, vm_base))
+    if initialized is None:
+        for case_id, _offset, _fn in specs:
+            _skip(cases, case_id, "VM scratch initialization failed")
+        return
+
     for case_id, offset, fn in specs:
-        address = _vm_address(dbg, vm_base, offset)
+        address = _vm_address(debugger, vm_base, offset)
         _record(cases, case_id, lambda address=address, fn=fn: fn(address))
 
 
@@ -422,6 +445,7 @@ class SelfTestRunner:
             raise core.CliError("INVALID_LENGTH", "--length must be >= 1", core.EXIT_INVALID_INPUT)
 
         self.dbg = dbg
+        self.layer1 = Layer1Debugger(PyrclBackend(dbg))
         self.args = args
         self.plan = get_plan(getattr(args, "test_plan", "read-only"))
         self.cases: list[dict[str, Any]] = []
@@ -441,15 +465,17 @@ class SelfTestRunner:
             "requested_address": getattr(args, "address", None),
             "length": args.length,
             "vm_scratch": None,
+            "vm_scratch_size": None,
         }
 
         if self.plan.includes(SUITE_MEMORY):
-            self.context["vm_scratch"] = _vm_address(self.dbg, args.vm_address)
+            self.context["vm_scratch"] = _vm_address(self.layer1, args.vm_address)
+            self.context["vm_scratch_size"] = VM_SCRATCH_SIZE
 
     def run(self) -> dict[str, Any]:
         self._run_baseline()
         if self.plan.includes(SUITE_MEMORY):
-            _run_memory_tests(self.dbg, self.cases, self.context["vm_scratch"])
+            _run_memory_tests(self.layer1, self.cases, self.context["vm_scratch"])
         if self.plan.includes(SUITE_EXTENDED):
             self._run_extended()
         if self.plan.includes(SUITE_EXECUTION):
@@ -497,32 +523,25 @@ class SelfTestRunner:
             _skip(self.cases, "mem.target_u8", reason)
             return
 
-        _record(
-            self.cases,
-            "mem.target_dump",
-            lambda: core.h_mem_dump(
-                self.dbg,
-                SimpleNamespace(
-                    address=self.target_address,
-                    access=None,
-                    length=self.args.length,
-                ),
-            ),
-        )
-        _record(
-            self.cases,
-            "mem.target_u8",
-            lambda: core.h_mem_read(
-                self.dbg,
-                SimpleNamespace(
-                    address=self.target_address,
-                    access=None,
-                    type="u8",
-                    count=min(self.args.length, 16),
-                    byteorder=None,
-                ),
-            ),
-        )
+        def target_dump():
+            address, data = self.layer1.memory_dump(self.target_address, length=self.args.length)
+            return {"address": str(address), "length": len(data), "hex": data.hex()}
+
+        def target_u8():
+            address, values = self.layer1.memory_read_typed(
+                self.target_address,
+                type_name="u8",
+                count=min(self.args.length, 16),
+            )
+            return {
+                "address": str(address),
+                "type": "u8",
+                "count": len(values),
+                "value": values,
+            }
+
+        _record(self.cases, "mem.target_dump", target_dump)
+        _record(self.cases, "mem.target_u8", target_u8)
 
     def _run_extended(self) -> None:
         if self.target_address is None:
@@ -543,7 +562,9 @@ class SelfTestRunner:
             "suites": list(suite for suite in OPTIONAL_SUITES if suite in self.plan.suites),
             "safety": {
                 "direct_target_memory_writes_requested": False,
-                "vm_writes_restored": self.plan.includes(SUITE_MEMORY),
+                "vm_scratch_host_side": self.plan.includes(SUITE_MEMORY),
+                "vm_scratch_initialized": self.plan.includes(SUITE_MEMORY),
+                "vm_scratch_size": VM_SCRATCH_SIZE if self.plan.includes(SUITE_MEMORY) else None,
                 "breakpoint_state_mutation": self.plan.includes(SUITE_EXTENDED),
                 "breakpoint_implementation_runtime_dependent": self.plan.includes(SUITE_EXTENDED),
                 "execution_control": self.plan.includes(SUITE_EXECUTION),
@@ -621,6 +642,14 @@ def format_human_report(report: dict[str, Any]) -> str:
     )
 
     safety = report.get("safety", {})
+    if safety.get("vm_scratch_host_side"):
+        lines.extend(
+            [
+                "",
+                "NOTE: the memory suite initializes a dedicated 256-byte TRACE32 host-side VM:",
+                "scratch range. It does not write target memory; prior VM scratch contents are not preserved.",
+            ]
+        )
     if safety.get("breakpoint_state_mutation"):
         lines.extend(
             [

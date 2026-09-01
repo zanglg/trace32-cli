@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from . import app
+from . import completed_app as app
 
 
 def build_parser():

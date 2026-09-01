@@ -1,7 +1,8 @@
 """Runtime TRACE32/PYRCL capability discovery.
 
-Primitive register, memory, and breakpoint operations live in ``cli.py``. This
-module only contains functionality whose purpose is runtime capability discovery.
+The public debugger surface now routes through ``layer1``/``layer0``. This
+module remains focused on discovery helpers that are also reused by self-tests
+and compatibility tests.
 """
 
 from __future__ import annotations

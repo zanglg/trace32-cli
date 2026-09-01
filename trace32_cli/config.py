@@ -1,16 +1,21 @@
-"""Layered TRACE32 CLI configuration.
+"""TRACE32 CLI configuration resolution.
 
-Precedence, highest first:
-  explicit CLI > --config > project local > project > user > defaults
+Persistent precedence, highest first:
+  --config > project > user > defaults
 
-Environment variables are intentionally not part of runtime resolution. This
-keeps endpoint selection explicit and auditable: use CLI flags for one-off
-overrides and TOML configuration for persistent settings.
+Explicit CLI connection/profile options are applied above persistent config.
+Environment variables are intentionally not part of runtime resolution.
 
-When no profile and no host are configured, the official CLI defaults to a local
-PowerView endpoint at localhost. A selected profile never falls back to that
-implicit local endpoint: it must resolve a host explicitly from configuration or
-CLI options.
+Project configuration is discovered from the current working directory upward.
+The nearest ancestor containing ``.trace32/config.toml`` is the project root.
+This supports subprojects and monorepos without requiring configuration to live
+at the Git repository top-level. Git top-level is only a fallback when no
+project TRACE32 configuration is found in the ancestor chain.
+
+When no profile and no host are configured, the CLI defaults to the local
+PowerView endpoint at localhost:20001. A selected profile never falls back to
+that implicit local endpoint: it must resolve a host explicitly from
+configuration or CLI options.
 """
 
 from __future__ import annotations
@@ -52,7 +57,15 @@ class ProfileHostMissing(ConfigError):
         )
 
 
-def project_root() -> Path:
+def _nearest_project_root(start: Path | None = None) -> Path | None:
+    current = (start or Path.cwd()).resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".trace32" / "config.toml").is_file():
+            return candidate
+    return None
+
+
+def _git_root() -> Path | None:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -64,7 +77,11 @@ def project_root() -> Path:
             return Path(result.stdout.strip()).resolve()
     except OSError:
         pass
-    return Path.cwd().resolve()
+    return None
+
+
+def project_root() -> Path:
+    return _nearest_project_root() or _git_root() or Path.cwd().resolve()
 
 
 def user_config_path() -> Path:
@@ -79,7 +96,6 @@ def config_locations() -> dict[str, str]:
     return {
         "user": str(user_config_path()),
         "project": str(root / ".trace32" / "config.toml"),
-        "project_local": str(root / ".trace32" / "config.local.toml"),
     }
 
 
@@ -99,7 +115,6 @@ def load_layered_config(explicit: str | None = None) -> list[tuple[str, Path, di
     candidates: list[tuple[str, Path]] = [
         ("user", user_config_path()),
         ("project", root / ".trace32" / "config.toml"),
-        ("project_local", root / ".trace32" / "config.local.toml"),
     ]
     if explicit:
         candidates.append(("explicit", Path(explicit).expanduser().resolve()))
@@ -147,6 +162,7 @@ def _coerce(field: str, value: Any) -> Any:
 
 
 def resolve_runtime(args) -> tuple[dict[str, Any], dict[str, Any]]:
+    root = project_root()
     layers = load_layered_config(getattr(args, "config", None))
 
     profile = None
@@ -206,6 +222,7 @@ def resolve_runtime(args) -> tuple[dict[str, Any], dict[str, Any]]:
 
     runtime["profile"] = profile
     meta = {
+        "project_root": str(root),
         "files": [{"layer": label, "path": str(path)} for label, path, _data in layers],
         "sources": {"profile": profile_source, **sources},
     }
